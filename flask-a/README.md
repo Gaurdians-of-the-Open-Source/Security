@@ -13,7 +13,7 @@ This is a Flask-based backend system that performs static code analysis on uploa
 ## 🚀 Quickstart
 
 
-# Upload a zip file for analysis
+## Upload a zip file for analysis
 curl -X POST -F "file=@your_project.zip" http://localhost:5000/analyze
 Response:
 
@@ -25,7 +25,7 @@ Response:
 }
 ```
 
-📁 Folder Structure
+## 📁 Folder Structure
 ```bash
 flask-a/
 ├── app.py                  # Main Flask app
@@ -37,13 +37,13 @@ flask-a/
 │   └── formatter.py        # Formats Semgrep output to clean JSON
 └── requirements.txt        # Dependencies
 ```
-🛠 Tech Stack
+## 🛠 Tech Stack
 - Python 3.10+
 - Flask
 - Semgrep for static analysis
 - UUID for per-upload job tracking
 
-🧠 Future Plans
+## 🧠 Future Plans
 - Markdown or PDF report generation
 - LLM integration (e.g., Deepseek-Coder) for explanation
 - Web dashboard frontend (React/Electron)
