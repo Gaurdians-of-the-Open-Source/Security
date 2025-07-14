@@ -35,7 +35,7 @@ flask-a/
 │   ├── unzip.py            # Handles saving & unzipping files
 │   ├── detector.py         # Runs Semgrep on matched files
 │   └── formatter.py        # Formats Semgrep output to clean JSON
-└── requirements.txt        # Dependencies
+└── llm/                    # Integration for LLM
 ```
 ## 🛠 Tech Stack
 - Python 3.10+
