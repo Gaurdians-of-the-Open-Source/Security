@@ -325,9 +325,3 @@ git commit -m "chore: untrack artifacts"
 ---
 
 
-
-
-
-## 연락/기여
-
-* Issue/PR 환영. 재현 스텝, 로그, 샘플 ZIP(민감정보 제거) 포함 시 빠른 대응 가능.
