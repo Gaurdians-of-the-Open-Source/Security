@@ -1,29 +1,28 @@
-# 🔐 Security Logic – A↔B LLM Pipeline (README)
+# 🔐 Security Logic — A↔B LLM Pipeline (README)
 
-오픈소스 취약점 분석을 **정적분석 + LLM 리포팅**으로 자동화하는 두 개의 Flask 서비스(**Flask A**, **Flask B**) 통합 문서입니다. 사용자는 **Flask A에 ZIP 1개만 업로드**하면, A가 정적분석을 수행하고 결과를 **Flask B로 자동 전달**, B가 **LLM 기반 설명 + PDF 리포트**를 생성하여 **최종 PDF를 A가 그대로 응답**합니다.
+This repository automates open‑source security reviews by combining **static analysis** with **LLM‑assisted reporting** across two Flask services: **Flask A** (ingest + static analysis) and **Flask B** (LLM markdown generation + PDF rendering). A client only uploads a single ZIP to **Flask A**; A analyzes and forwards artifacts to **Flask B**, which returns a **final PDF**. A simply streams B’s response back to the client.
 
 ---
 
-## TL;DR (5분 설정)
+## TL;DR (5‑minute setup)
 
-1. Python 3.11+ (권장 3.13) 준비
-2. 라이브러리 설치
+1. **Python**: 3.11+ (3.13 recommended)
+2. **Install deps** (in both `Flask_A/` and `Flask_B/`):
 
-   * \*\*Flask\_A/\*\*와 **Flask\_B/** 각각에서:
-
-     ```powershell
-     pip install -r requirements.txt
-     ```
-3. LLM 키 설정 (Anthropic Claude 3.5 Sonnet)
+   ```powershell
+   pip install -r requirements.txt
+   ```
+3. **LLM key & model** (Anthropic Claude **Sonnet 4**):
 
    ```powershell
    $env:ANTHROPIC_API_KEY = "sk-ant-..."
+   $env:ANTHROPIC_MODEL = "sonnet-4"   # or provider alias, e.g. "claude-sonnet-4-latest"
    ```
-4. 서버 실행
+4. **Run servers**
 
-   * 터미널1: `python Flask_B/app.py`  (기본: [http://127.0.0.1:5001](http://127.0.0.1:5001))
-   * 터미널2: `python Flask_A/app.py`  (기본: [http://127.0.0.1:5000](http://127.0.0.1:5000))
-5. 요청(사용자는 A만 호출)
+   * Terminal 1: `python Flask_B/app.py`  → [http://127.0.0.1:5001](http://127.0.0.1:5001)
+   * Terminal 2: `python Flask_A/app.py`  → [http://127.0.0.1:5000](http://127.0.0.1:5000)
+5. **Call A (client only hits A):**
 
    ```powershell
    curl.exe -X POST "http://127.0.0.1:5000/analyze" `
@@ -34,135 +33,137 @@
 
 ---
 
-## 아키텍처 개요
+## Architecture
 
 ```
 [Client]
    │  POST /analyze (ZIP)
    ▼
 [Flask A]
-   1) 업로드 ZIP 저장 → 압축해제
-   2) 정적분석(Semgrep 등) → issues.json 생성
-   3) forwarder.py로 Flask B /deep-analyze 에 멀티파트 전송
-       ├─ form: { job_id, source_zip, json_file }
-       └─ headers: { Accept: application/pdf or application/json }
-   4) Flask B 응답을 그대로 클라이언트에 반환
+   1) Save ZIP  → unzip
+   2) Static analysis (e.g., Semgrep) → issues.json
+   3) POST multipart to Flask B /deep-analyze
+       form: { job_id, source_zip, json_file }
+       headers: { Accept: application/pdf | application/json }
+   4) Stream B’s response back to client
    ▲
 [Flask B]
-   1) 요청 수신, job_id별 작업 폴더 초기화
-   2) ZIP 저장/압축해제, issues.json 로드
-   3) 파일별 이슈 그룹핑 → 원본 코드 매핑
-   4) LLM으로 Markdown 조각 생성
-   5) Markdown 병합 → HTML 변환 → PDF 생성(xhtml2pdf)
-   6) PDF 바이너리로 즉시 응답(send_file)
+   1) Init job directories (by job_id)
+   2) Save + unzip ZIP, load issues.json
+   3) Group issues by file → map to source
+   4) Generate per‑file Markdown with LLM (Sonnet 4)
+   5) Merge Markdown → HTML → PDF (xhtml2pdf)
+   6) Return PDF (or JSON metadata)
 ```
 
 ---
 
-## 주요 기능
+## Key Features
 
-* **원클릭 리포팅**: ZIP 업로드 한 번으로 PDF 리포트 다운로드
-* **정적분석 + LLM**: 알려진 취약점 감지(정적분석) + 맥락 설명/개선안(LLM)
-* **job\_id 격리**: 동시 요청도 안전한 디렉토리 구조
-* **유연한 응답 형식**: `Accept` 헤더로 PDF/JSON 선택
-* **Windows 친화적**: PowerShell, Malgun 폰트 예시 포함
+* **One‑shot reporting**: upload ZIP → receive PDF
+* **Static analysis + LLM**: known pattern detection + human‑readable remediation
+* **Job isolation**: per‑`job_id` working directories (safe for concurrency)
+* **Flexible response**: choose PDF or JSON via `Accept` header
+* **Windows‑friendly**: PowerShell examples, font hints
 
 ---
 
-## 디렉토리 구조
-
-프로젝트 루트 예시:
+## Project Layout
 
 ```
 Security/
 ├─ Flask_A/
-│  ├─ app.py                 # /analyze: ZIP 업로드 → 정적분석 → B로 전달 → PDF 스트리밍 응답
-│  ├─ forwarder.py           # B /deep-analyze 로 multipart 전송
+│  ├─ app.py                 # /analyze: ingest ZIP → static analysis → forward to B → stream PDF
+│  ├─ forwarder.py           # posts multipart to B /deep-analyze
 │  ├─ analysis/
 │  │  ├─ unzip.py            # save_and_unzip
-│  │  └─ detector.py         # analyze_project → issues.json 생성
-│  ├─ uploads/               # (job_id)/source.zip            # 런타임 산출물
-│  └─ outputs/               # (job_id)/issues.json           # 런타임 산출물
+│  │  └─ detector.py         # analyze_project → issues.json
+│  ├─ uploads/               # (job_id)/source.zip         (runtime)
+│  └─ outputs/               # (job_id)/issues.json        (runtime)
 │
 ├─ Flask_B/
-│  ├─ app.py                 # /deep-analyze 수신 → LLM → PDF 생성 → 응답
+│  ├─ app.py                 # /deep-analyze → LLM → PDF → response
 │  ├─ unzipper.py            # extract_zip
 │  ├─ analyzer.py            # load_and_group_issues, save_grouped_issues,
 │  │                         # save_piece_markdowns, merge_markdowns_to_pdf
-│  ├─ llm_utils.py           # Anthropic Claude 호출 (generate_llm_md)
-│  ├─ utils.py               # make_dirs 등 공통 유틸
-│  ├─ received/   (job_id)/  # A에서 받은 source.zip, issues.json
-│  ├─ extracted/  (job_id)/  # zip 해제본
-│  ├─ files/      (job_id)/  # 이슈 파일별 원본 수집
-│  ├─ markdowns/  (job_id)/  # 파일별 LLM markdown 조각
-│  └─ output/     (job_id)/  # 최종 report.pdf
+│  ├─ llm_utils.py           # Anthropic Sonnet 4 client (generate_llm_md)
+│  ├─ utils.py               # make_dirs, etc.
+│  ├─ received/   (job_id)/  # A’s source.zip, issues.json
+│  ├─ extracted/  (job_id)/  # unzipped tree
+│  ├─ files/      (job_id)/  # collected source slices by issue
+│  ├─ markdowns/  (job_id)/  # per‑file LLM markdown pieces
+│  └─ output/     (job_id)/  # final report.pdf
 │
 ├─ .gitignore
-├─ README.md (본 문서)
-└─ requirements.txt (A/B 각각 또는 공용)
+├─ README.md (this file)
+└─ requirements.txt (per service or shared)
 ```
 
-> **주의**: `uploads/`, `outputs/`, `received/`, `extracted/`, `files/`, `markdowns/`, `output/`는 **런타임 산출물**로, `.gitignore`로 제외하세요. 빈 디렉토리 유지가 필요하면 `.gitkeep` 사용.
+> **Note:** `uploads/`, `outputs/`, `received/`, `extracted/`, `files/`, `markdowns/`, `output/` are **runtime artifacts** and must be ignored by Git. Use `.gitkeep` if you want empty directories tracked.
 
 ---
 
-## 데이터 플로우 (상세)
+## Data Flow (Detailed)
 
-### 1) Flask A – `/analyze`
+### A — `POST /analyze`
 
-* 입력: `multipart/form-data`
+**Input** (multipart/form-data)
 
-  * `file`: 프로젝트 ZIP
-  * (선택) `job_id`: 미지정 시 UUID 생성
-* 처리:
+* `file`: project ZIP
+* `job_id` *(optional)*: if omitted, A generates a UUID
 
-  1. `uploads/{job_id}/source.zip` 저장
-  2. 압축해제 후 상위 1디렉토리 자동 진입(폴더 래핑 방지)
-  3. `analyze_project(extracted_path)` → **issues.json** 생성
-  4. `forwarder.send_to_flask_b(job_id, source.zip, issues.json, Accept)` 호출
-* 출력:
+**Process**
 
-  * `Accept: application/pdf` → **PDF 바이너리**
-  * `Accept: application/json` → **JSON** (B가 제공하는 `pdf_path` 등 메타 정보)
+1. Save to `uploads/{job_id}/source.zip`
+2. Unwrap single top‑level directory if present (avoid nested folder wrappers)
+3. Run `analyze_project(extracted_path)` → write **issues.json**
+4. Call `forwarder.send_to_flask_b(job_id, source.zip, issues.json, Accept)`
 
-### 2) Flask B – `/deep-analyze`
+**Output**
 
-* 입력: `multipart/form-data`
+* With `Accept: application/pdf` → **PDF** (binary)
+* With `Accept: application/json` → **JSON** (B’s `pdf_path`, counts, etc.)
 
-  * `job_id` (필수)
-  * `source_zip` (필수)
-  * `json_file` (필수, A의 issues.json)
-* 처리:
+### B — `POST /deep-analyze`
 
-  1. `received/extracted/files/markdowns` **초기화** (job\_id별)
-  2. ZIP/JSON 저장 → ZIP 압축해제
-  3. `load_and_group_issues(json_path)` → 파일경로 기준 그룹핑
-  4. `save_grouped_issues(files_dir, grouped, extracted_dir)` → 해당 원본 코드 조각 수집
-  5. `save_piece_markdowns(files_dir, markdowns_dir)` → **LLM(Claude)** 로 마크다운 조각 생성
-  6. `merge_markdowns_to_pdf(markdowns_dir, output_dir, meta)` → PDF 병합 생성
-* 출력:
+**Input** (multipart/form-data)
 
-  * 기본: `send_file(..., mimetype="application/pdf")`로 **PDF 즉시 응답**
-  * `Accept: application/json`일 때: `{ job_id, pdf_path, counts... }`
+* `job_id`, `source_zip`, `json_file`
+
+**Process**
+
+1. Reset job directories (`received/`, `extracted/`, `files/`, `markdowns/`)
+2. Save + unzip ZIP; load `issues.json`
+3. `load_and_group_issues(json_path)` → group by file/location
+4. `save_grouped_issues(files_dir, grouped, extracted_dir)` → map to code
+5. `save_piece_markdowns(files_dir, markdowns_dir)` → **LLM (Sonnet 4)** generates Markdown blocks
+6. `merge_markdowns_to_pdf(markdowns_dir, output_dir, meta)` → final PDF
+
+**Output**
+
+* Default: `send_file(..., mimetype="application/pdf")`
+* If `Accept: application/json`: `{ job_id, pdf_path, counts... }`
 
 ---
 
-## 설치 & 실행
+## Installation & Running
 
-### 필수 요구사항
+### Requirements
 
-* Python 3.11 이상 (권장 3.13)
+* Python 3.11+ (3.13 recommended)
 * OS: Windows / Linux / macOS
 
-### 패키지 설치
+### Dependencies
 
-A/B 각각에서:
+Run in each service directory:
 
 ```powershell
-pip install -r requirements.txt
+dir Flask_A; pip install -r Flask_A/requirements.txt
+
+dir Flask_B; pip install -r Flask_B/requirements.txt
 ```
 
-권장 `requirements.txt` 예시:
+**Suggested `requirements.txt`:**
 
 ```
 Flask>=3.0
@@ -176,30 +177,31 @@ Pillow>=10.0
 anthropic>=0.39.0
 ```
 
-### 환경변수
+### Environment Variables
 
-* `ANTHROPIC_API_KEY` (필수): Claude 4 Sonnet 사용
+* `ANTHROPIC_API_KEY` *(required)*
+* `ANTHROPIC_MODEL` *(optional, default: `sonnet-4`)*
+* `FLASK_B_BASE_URL` *(optional, default: `http://127.0.0.1:5001`)*
 
-  ```powershell
-  $env:ANTHROPIC_API_KEY = "sk-ant-..."
-  ```
-* `FLASK_B_BASE_URL` (선택, 기본 `http://127.0.0.1:5001`): A→B 주소
-
-  ```powershell
-  $env:FLASK_B_BASE_URL = "http://127.0.0.1:5001"
-  ```
-
-### 서버 실행
+PowerShell example:
 
 ```powershell
-# 터미널 1
+$env:ANTHROPIC_API_KEY = "sk-ant-..."
+$env:ANTHROPIC_MODEL = "sonnet-4"
+$env:FLASK_B_BASE_URL = "http://127.0.0.1:5001"
+```
+
+### Run
+
+```powershell
+# Terminal 1
 python Flask_B/app.py  # http://127.0.0.1:5001
 
-# 터미널 2
+# Terminal 2
 python Flask_A/app.py  # http://127.0.0.1:5000
 ```
 
-### 헬스체크
+### Health Checks
 
 ```powershell
 curl.exe http://127.0.0.1:5001/health
@@ -208,131 +210,123 @@ curl.exe http://127.0.0.1:5000/health
 
 ---
 
-## API 명세 (요약)
+## API Reference (Quick)
 
-### A: `POST /analyze`
+### A — `POST /analyze`
 
-* 요청
+* **Headers**: `Accept: application/pdf | application/json`
+* **Form**: `file=@source.zip`, `[job_id=...]`
+* **Returns**: PDF or JSON
 
-  * Headers: `Accept: application/pdf | application/json`
-  * Form: `file=@source.zip`, `[job_id=...]`
-* 응답
+### B — `POST /deep-analyze`
 
-  * `application/pdf` (기본)
-  * 또는 JSON `{ status, job_id, ... }` (구현 선택)
-
-### B: `POST /deep-analyze`
-
-* 요청 (A가 내부적으로 호출)
-
-  * Form: `job_id`, `source_zip=@source.zip`, `json_file=@issues.json`
-  * Headers: `Accept: ...` (A에서 전달)
-* 응답
-
-  * `application/pdf` 바이너리
-  * 또는 JSON `{ ok, job_id, pdf_path, counts... }`
+* **Form**: `job_id`, `source_zip=@...`, `json_file=@...`
+* **Returns**: PDF or JSON metadata
 
 ---
 
-## LLM 연동 (Anthropic Claude 4 Sonnet)
+## LLM Integration — **Sonnet 4**
 
-* `llm_utils.generate_llm_md(prompt)`: 파일별 이슈/코드를 입력으로 받아 **취약점 설명 + 개선 제안** 마크다운을 생성
-* 모델명 예: `claude-3.5-sonnet-latest`
-* 권장 프롬프트 포함 요소
-
-  * 역할 지정(보안 리뷰어)
-  * 입력 형식(이슈 JSON 요약 + 코드 스니펫)
-  * 출력 형식(Markdown: Summary, Risk, Proof, Fix)
-  * 코드 블록은 언어 태그 포함(\`\`\`\`python\` 등)
-
----
-
-## PDF 생성
-
-* 기본 파이프라인: **Markdown → HTML (python-Markdown) → PDF (xhtml2pdf)**
-* Windows 한글 폰트 예시:
-
-  ```css
-  @font-face {
-    font-family: "MalgunGothic";
-    src: url("C:/Windows/Fonts/malgun.ttf");
-  }
-  body { font-family: "MalgunGothic"; }
-  ```
-* 리눅스/맥은 시스템 폰트 경로에 맞게 조정
-* 대체 제너레이터: `fpdf2` / `reportlab`
-
----
-
-## 에러 처리 & 트러블슈팅
-
-* **`ModuleNotFoundError: markdown`** → `pip install Markdown`
-* **`ModuleNotFoundError: anthropic`** → `pip install anthropic` + `ANTHROPIC_API_KEY` 설정
-* **`KeyError: 'ANTHROPIC_API_KEY'`** → 환경변수/VSCode `launch.json` / `.env` 설정 확인
-* **A에서 B 연결 실패(ForwardError/timeout)**
-
-  * B 구동 여부, 포트/방화벽, `FLASK_B_BASE_URL` 확인
-  * A→B `Accept` 헤더 전달 여부 확인
-* **ZIP/JSON 파싱 오류** → `zipfile.BadZipFile`, `json.JSONDecodeError` 처리 분기 확인
-* **Windows PowerShell에서 줄바꿈** → `^`(cmd) 대신 **백틱**(\`) 사용
-* **PDF 한글 깨짐** → 폰트 임베딩 경로 점검
-
----
-
-## 보안 고려사항
-
-* 코드/이슈 데이터는 **민감정보가 없도록** 관리 (비밀키/토큰 업로드 금지)
-* 업로드 ZIP은 **임시 저장 후 보관 기간 제한/자동 정리** 권장
-* ZIP 해제 시 **zip-slip 방어**, 파일 수/총용량 상한
-* LLM 프롬프트에 PII/비밀정보 유출 방지
-
----
-
-## Git 운영 가이드 (산출물 제외)
-
-* `.gitignore`로 ZIP/PDF 및 런타임 디렉토리 제외
-* 이미 추적 중인 산출물 제거:
-
-  ```powershell
-  git rm -r --cached uploads outputs received extracted files markdown markdowns output
-  git add .
-  git commit -m "chore: untrack artifacts"
-  git push
-  ```
-
----
-
-## 예시 코드 스니펫
-
-**A → B 전송 (forwarder.py)**
+Example `llm_utils.py` (simplified):
 
 ```python
-# RECEIVE_ENDPOINT = "/deep-analyze"
-body, content_type, filename = send_to_flask_b(
-    job_id=job_id,
-    source_zip_path=zip_save_path,
-    issues_json_path=issues_path,
-    accept="application/pdf",
-)
+from anthropic import Anthropic
+import os
+
+API_KEY = os.getenv("ANTHROPIC_API_KEY")
+if not API_KEY:
+    raise RuntimeError("ANTHROPIC_API_KEY is not set")
+
+MODEL = os.getenv("ANTHROPIC_MODEL", "sonnet-4")  # e.g., "sonnet-4" or provider alias
+client = Anthropic(api_key=API_KEY)
+
+def generate_llm_md(prompt: str) -> str:
+    resp = client.messages.create(
+        model=MODEL,
+        max_tokens=2048,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return resp.content[0].text
 ```
 
-**B 응답 분기**
+**Prompting tips**
 
-```python
-accept = (request.headers.get('Accept') or '').lower()
-if 'application/json' in accept:
-    return jsonify({ 'ok': True, 'job_id': job_id, 'pdf_path': str(pdf_path) })
-return send_file(str(pdf_path), mimetype='application/pdf', as_attachment=True,
-                 download_name=f"{job_id}.pdf")
+* Role: security reviewer
+* Inputs: issue summary + relevant code snippet(s)
+* Output: Markdown sections (Summary, Impact, Evidence, Fix), fenced code blocks with language tags
+
+---
+
+## PDF Rendering
+
+Default pipeline: **Markdown → HTML (python‑Markdown) → PDF (xhtml2pdf)**.
+
+Windows font example (to prevent CJK garbling):
+
+```css
+@font-face { font-family: "MalgunGothic"; src: url("C:/Windows/Fonts/malgun.ttf"); }
+body { font-family: "MalgunGothic"; }
+```
+
+Alternative generators: `fpdf2` or `reportlab`.
+
+---
+
+## Troubleshooting
+
+* `ModuleNotFoundError: markdown` → `pip install Markdown`
+* `ModuleNotFoundError: anthropic` → `pip install anthropic` + set `ANTHROPIC_API_KEY`
+* `KeyError: 'ANTHROPIC_API_KEY'` → set env var or use `.env` / VS Code `launch.json`
+* A→B forwarding errors (timeout/refused) → ensure B is running; verify `FLASK_B_BASE_URL`
+* Bad ZIP/JSON → catch `zipfile.BadZipFile`, `json.JSONDecodeError`
+* PowerShell line continuation → use backticks (`` ` ``), not `^`
+* PDF font issues → verify font path in CSS/@font-face
+
+---
+
+## Security Considerations
+
+* Avoid secrets/PII in uploaded archives
+* Limit ZIP size / file count; defend against zip‑slip
+* Auto‑prune runtime artifacts (`received/`, `extracted/`, etc.)
+* Prompt templates should minimize leakage of sensitive context
+
+---
+
+## Git Hygiene (exclude artifacts)
+
+Sample `.gitignore` highlights:
+
+```
+__pycache__/
+*.pyc
+*.log
+*.zip
+*.pdf
+uploads/**
+outputs/**
+received/**
+extracted/**
+files/**
+markdown/**
+markdowns/**
+output/**
+!**/.gitkeep
+```
+
+To untrack already committed artifacts:
+
+```powershell
+git rm -r --cached uploads outputs received extracted files markdown markdowns output
+git add .
+git commit -m "chore: untrack artifacts"
 ```
 
 ---
 
-## 라이선스
 
-프로젝트 루트의 `LICENSE` 참고 (미설정 시 추후 업데이트).
 
----
+
 
 ## 연락/기여
 
