@@ -178,7 +178,7 @@ anthropic>=0.39.0
 
 ### 환경변수
 
-* `ANTHROPIC_API_KEY` (필수): Claude 3.5 Sonnet 사용
+* `ANTHROPIC_API_KEY` (필수): Claude 4 Sonnet 사용
 
   ```powershell
   $env:ANTHROPIC_API_KEY = "sk-ant-..."
@@ -234,7 +234,7 @@ curl.exe http://127.0.0.1:5000/health
 
 ---
 
-## LLM 연동 (Anthropic Claude 3.5 Sonnet)
+## LLM 연동 (Anthropic Claude 4 Sonnet)
 
 * `llm_utils.generate_llm_md(prompt)`: 파일별 이슈/코드를 입력으로 받아 **취약점 설명 + 개선 제안** 마크다운을 생성
 * 모델명 예: `claude-3.5-sonnet-latest`
