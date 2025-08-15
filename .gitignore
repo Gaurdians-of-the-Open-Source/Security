@@ -1,0 +1,68 @@
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.venv/
+venv/
+.env
+
+# --- Logs / OS ---
+*.log
+.DS_Store
+
+# --- Binaries & archives ---
+*.zip
+*.7z
+*.rar
+*.tar
+*.gz
+*.pdf
+
+# --- Runtime artifacts (keep only .gitkeep) ---
+uploads/**
+!uploads/.gitkeep
+
+outputs/**
+!outputs/.gitkeep
+
+received/**        # <-- 철자 주의 (received)
+!received/.gitkeep
+
+recieved/**        # 혹시 과거 오타 폴더가 있다면 이것도 제거
+!recieved/.gitkeep
+
+extracted/**
+!extracted/.gitkeep
+
+files/**
+!files/.gitkeep
+
+markdown/**
+!markdown/.gitkeep
+
+markdowns/**
+!markdowns/.gitkeep
+
+output/**
+!output/.gitkeep
+
+# 하위 프로젝트 폴더에도 동일 규칙 적용 (있을 때만)
+Flask_A/uploads/**
+!Flask_A/uploads/.gitkeep
+Flask_A/outputs/**
+!Flask_A/outputs/.gitkeep
+
+Flask_B/received/**
+!Flask_B/received/.gitkeep
+Flask_B/extracted/**
+!Flask_B/extracted/.gitkeep
+Flask_B/files/**
+!Flask_B/files/.gitkeep
+Flask_B/markdown/**
+!Flask_B/markdown/.gitkeep
+Flask_B/markdowns/**
+!Flask_B/markdowns/.gitkeep
+Flask_B/output/**
+!Flask_B/output/.gitkeep
